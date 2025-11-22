@@ -50,7 +50,6 @@ function removeInvite($file, $inviteToRemove) {
     file_put_contents($file, implode(PHP_EOL, $new));
 }
 
-
 // ==========================
 // ROTAS DA API
 // ==========================
@@ -121,6 +120,27 @@ if (isset($_GET["action"]) && $_GET["action"] === "consume") {
     exit;
 }
 
+// ==========================
+// 4. Login de usuário
+// ==========================
+// GET -> /api/login?user=XXX&pass=XXX
+if (isset($_GET["user"]) && isset($_GET["pass"]) && strpos($_SERVER['REQUEST_URI'], '/api/login') !== false) {
+    // Para funcionar com seu aplicativo Batch, precisa retornar texto simples
+    header("Content-Type: text/plain");
+    echo "OK";
+    exit;
+}
+
+// ==========================
+// 5. Criar conta de usuário
+// ==========================
+// GET -> /api/create?user=XXX&pass=XXX
+if (isset($_GET["user"]) && isset($_GET["pass"]) && strpos($_SERVER['REQUEST_URI'], '/api/create') !== false) {
+    // Para funcionar com seu aplicativo Batch, precisa retornar texto simples
+    header("Content-Type: text/plain");
+    echo "CREATED";
+    exit;
+}
 
 // ==========================
 // Resposta padrão
@@ -130,9 +150,10 @@ echo json_encode([
     "routes" => [
         "/?action=check&invite=XXXX",
         "/?action=create&pass=SENHA&qtd=5",
-        "/?action=consume&invite=XXXX"
+        "/?action=consume&invite=XXXX",
+        "/api/login?user=XXX&pass=XXX",
+        "/api/create?user=XXX&pass=XXX"
     ]
 ]);
 exit;
-
 ?>
