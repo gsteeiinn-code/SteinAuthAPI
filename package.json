@@ -1,17 +1,15 @@
 {
   "name": "stein-auth-api",
   "version": "1.0.0",
-  "description": "Sistema de autenticação Stein",
-  "main": "index.js",
+  "engines": {
+    "node": "22.x"
+  },
   "scripts": {
     "start": "node index.js",
     "dev": "node index.js"
   },
   "dependencies": {
-    "express": "^4.18.2"
-  },
-  "engines": {
-    "node": "22.x"
-  },
-  "license": "MIT"
+    "express": "^4.18.0",
+    "cors": "^2.8.5"
+  }
 }
