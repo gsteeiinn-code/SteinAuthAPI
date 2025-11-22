@@ -1,5 +1,7 @@
 <?php
 header("Content-Type: application/json");
+header("Access-Control-Allow-Origin: *");
+header("Access-Control-Allow-Methods: GET, POST, OPTIONS");
 
 // ==========================
 // CONFIGURAÇÕES
@@ -7,6 +9,7 @@ header("Content-Type: application/json");
 $ADMIN_PASSWORD = "Stein23912387aaaas";
 $INVITES_FILE = "invites.txt";
 $USERS_FILE = "users.json";
+$USED_INVITES_FILE = "used_invites.txt";
 
 // Criar arquivos caso não existam
 if (!file_exists($INVITES_FILE)) {
@@ -15,6 +18,10 @@ if (!file_exists($INVITES_FILE)) {
 
 if (!file_exists($USERS_FILE)) {
     file_put_contents($USERS_FILE, json_encode([]));
+}
+
+if (!file_exists($USED_INVITES_FILE)) {
+    file_put_contents($USED_INVITES_FILE, "");
 }
 
 // ==========================
@@ -31,8 +38,15 @@ function gerarInvite() {
     return $invite;
 }
 
-// Ler invites
+// Ler invites ativos
 function getInvites($file) {
+    if (!file_exists($file)) return [];
+    $lines = file($file, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+    return $lines;
+}
+
+// Ler invites usados
+function getUsedInvites($file) {
     if (!file_exists($file)) return [];
     $lines = file($file, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
     return $lines;
@@ -43,16 +57,32 @@ function addInvite($file, $invite) {
     file_put_contents($file, $invite . PHP_EOL, FILE_APPEND);
 }
 
-// Remover um invite (quando for usado)
-function removeInvite($file, $inviteToRemove) {
-    $invites = getInvites($file);
+// Registrar invite como usado
+function markInviteAsUsed($file, $invite) {
+    file_put_contents($file, $invite . PHP_EOL, FILE_APPEND);
+}
+
+// Remover um invite dos ativos e marcar como usado
+function consumeInvite($inviteFile, $usedFile, $inviteToRemove) {
+    $invites = getInvites($inviteFile);
     $new = [];
+    $found = false;
+    
     foreach ($invites as $inv) {
-        if (trim($inv) !== trim($inviteToRemove)) {
+        if (trim($inv) === trim($inviteToRemove)) {
+            $found = true;
+            // Marcar como usado
+            markInviteAsUsed($usedFile, $inviteToRemove);
+        } else {
             $new[] = $inv;
         }
     }
-    file_put_contents($file, implode(PHP_EOL, $new));
+    
+    if ($found) {
+        file_put_contents($inviteFile, implode(PHP_EOL, $new));
+        return true;
+    }
+    return false;
 }
 
 // Carregar usuários
@@ -78,13 +108,39 @@ function saveUsers($users) {
 // ==========================
 
 // ==========================
+// 0. Rota de saúde da API
+// ==========================
+if ($_SERVER['REQUEST_METHOD'] === 'GET' && ($_SERVER['REQUEST_URI'] === '/' || $_SERVER['REQUEST_URI'] === '/api/status')) {
+    $users = loadUsers();
+    $invites = getInvites($INVITES_FILE);
+    $usedInvites = getUsedInvites($USED_INVITES_FILE);
+    
+    echo json_encode([
+        "status" => "online",
+        "message" => "Stein Auth API PHP - Online",
+        "total_users" => count($users),
+        "active_invites" => count($invites),
+        "used_invites" => count($usedInvites),
+        "version" => "3.0.0"
+    ]);
+    exit;
+}
+
+// ==========================
 // 1. Verificar se invite existe
 // ==========================
-// GET -> ?action=check&invite=XXXXX
 if (isset($_GET["action"]) && $_GET["action"] === "check") {
-    $invite = $_GET["invite"] ?? "";
+    $invite = trim($_GET["invite"] ?? "");
     $invites = getInvites($INVITES_FILE);
+    $usedInvites = getUsedInvites($USED_INVITES_FILE);
 
+    // Verificar se já foi usado
+    if (in_array($invite, $usedInvites)) {
+        echo json_encode(["status" => "used"]);
+        exit;
+    }
+    
+    // Verificar se está ativo
     if (in_array($invite, $invites)) {
         echo json_encode(["status" => "valid"]);
     } else {
@@ -96,9 +152,7 @@ if (isset($_GET["action"]) && $_GET["action"] === "check") {
 // ==========================
 // 2. Criar invites (ADMIN)
 // ==========================
-// POST -> ?action=create&pass=SENHA&qtd=5
 if (isset($_GET["action"]) && $_GET["action"] === "create") {
-
     $pass = $_GET["pass"] ?? "";
     $qtd  = intval($_GET["qtd"] ?? 1);
 
@@ -119,39 +173,46 @@ if (isset($_GET["action"]) && $_GET["action"] === "create") {
         "status" => "success",
         "invites" => $gerados
     ]);
-
     exit;
 }
 
 // ==========================
 // 3. Consumir invite (quando usuário usou)
 // ==========================
-// POST -> ?action=consume&invite=XXXXX
 if (isset($_GET["action"]) && $_GET["action"] === "consume") {
-
-    $invite = $_GET["invite"] ?? "";
+    $invite = trim($_GET["invite"] ?? "");
     $invites = getInvites($INVITES_FILE);
+    $usedInvites = getUsedInvites($USED_INVITES_FILE);
 
+    // Verificar se já foi usado
+    if (in_array($invite, $usedInvites)) {
+        echo json_encode(["status" => "already_used"]);
+        exit;
+    }
+    
+    // Verificar se existe
     if (!in_array($invite, $invites)) {
         echo json_encode(["status" => "invalid"]);
         exit;
     }
 
-    removeInvite($INVITES_FILE, $invite);
-
-    echo json_encode(["status" => "used"]);
+    // Consumir o invite
+    if (consumeInvite($INVITES_FILE, $USED_INVITES_FILE, $invite)) {
+        echo json_encode(["status" => "used"]);
+    } else {
+        echo json_encode(["status" => "error"]);
+    }
     exit;
 }
 
 // ==========================
 // 4. Login de usuário
 // ==========================
-// GET -> /api/login?user=XXX&pass=XXX
 if (isset($_GET["user"]) && isset($_GET["pass"]) && strpos($_SERVER['REQUEST_URI'], '/api/login') !== false) {
     header("Content-Type: text/plain");
     
-    $user = $_GET["user"] ?? "";
-    $pass = $_GET["pass"] ?? "";
+    $user = trim($_GET["user"] ?? "");
+    $pass = trim($_GET["pass"] ?? "");
     
     // Validar dados
     if (empty($user) || empty($pass)) {
@@ -177,12 +238,11 @@ if (isset($_GET["user"]) && isset($_GET["pass"]) && strpos($_SERVER['REQUEST_URI
 // ==========================
 // 5. Criar conta de usuário
 // ==========================
-// GET -> /api/create?user=XXX&pass=XXX
 if (isset($_GET["user"]) && isset($_GET["pass"]) && strpos($_SERVER['REQUEST_URI'], '/api/create') !== false) {
     header("Content-Type: text/plain");
     
-    $user = $_GET["user"] ?? "";
-    $pass = $_GET["pass"] ?? "";
+    $user = trim($_GET["user"] ?? "");
+    $pass = trim($_GET["pass"] ?? "");
     
     // Validar dados
     if (empty($user) || empty($pass)) {
@@ -220,57 +280,18 @@ if (isset($_GET["user"]) && isset($_GET["pass"]) && strpos($_SERVER['REQUEST_URI
 }
 
 // ==========================
-// 6. Status da API
-// ==========================
-// GET -> /api/status
-if (strpos($_SERVER['REQUEST_URI'], '/api/status') !== false) {
-    $users = loadUsers();
-    $invites = getInvites($INVITES_FILE);
-    
-    echo json_encode([
-        "status" => "online",
-        "total_users" => count($users),
-        "total_invites" => count($invites),
-        "version" => "2.0.0"
-    ]);
-    exit;
-}
-
-// ==========================
-// 7. Listar usuários (ADMIN)
-// ==========================
-// GET -> /api/admin/users?pass=SENHA
-if (strpos($_SERVER['REQUEST_URI'], '/api/admin/users') !== false) {
-    $pass = $_GET["pass"] ?? "";
-    
-    if ($pass !== $ADMIN_PASSWORD) {
-        echo json_encode(["error" => "Acesso negado"]);
-        exit;
-    }
-    
-    $users = loadUsers();
-    echo json_encode([
-        "total_users" => count($users),
-        "users" => $users
-    ]);
-    exit;
-}
-
-// ==========================
-// Resposta padrão
+// Resposta padrão para rotas desconhecidas
 // ==========================
 echo json_encode([
-    "status" => "Stein Auth API Online",
-    "version" => "2.0.0",
-    "routes" => [
-        "/?action=check&invite=XXXX",
-        "/?action=create&pass=SENHA&qtd=5",
-        "/?action=consume&invite=XXXX",
-        "/api/login?user=XXX&pass=XXX",
-        "/api/create?user=XXX&pass=XXX",
-        "/api/status",
-        "/api/admin/users?pass=SENHA"
+    "error" => "Rota não encontrada",
+    "available_routes" => [
+        "GET /",
+        "GET /api/status", 
+        "GET /?action=check&invite=CODE",
+        "GET /?action=create&pass=PASS&qtd=QTD",
+        "GET /?action=consume&invite=CODE",
+        "GET /api/login?user=USER&pass=PASS",
+        "GET /api/create?user=USER&pass=PASS"
     ]
 ]);
-exit;
 ?>
