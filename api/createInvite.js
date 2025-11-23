@@ -1,28 +1,29 @@
-import fs from "fs";
-import path from "path";
+import { kv } from '@vercel/kv';
 
-export default function handler(req, res) {
-
+export default async function handler(req, res) {
     if (req.method !== "POST") {
         return res.status(405).json({ error: "Método não permitido" });
     }
 
-    const invitesPath = path.join(process.cwd(), "data", "invites.json");
-    const invites = JSON.parse(fs.readFileSync(invitesPath, "utf8"));
-
+    // Gera código aleatório
     const code = Math.random().toString(36).substring(2, 12).toUpperCase();
-
-    invites.push({
-        code,
+    
+    // Cria o objeto do invite
+    const newInvite = {
+        code: code,
+        creator: req.body.creator || "Admin",
         used: false,
-        usedBy: null
-    });
+        usedBy: null,
+        date: new Date().toISOString()
+    };
 
-    fs.writeFileSync(invitesPath, JSON.stringify(invites, null, 2));
+    // Pega a lista atual de invites do banco
+    let invites = await kv.get('invites');
+    if (!invites) invites = []; // Se não existir, cria lista vazia
 
-    return res.status(200).json({
-        success: true,
-        code
-    });
+    // Adiciona e salva
+    invites.push(newInvite);
+    await kv.set('invites', invites);
+
+    return res.status(200).json({ success: true, code: code });
 }
-
