@@ -1,12 +1,6 @@
-import fs from "fs";
-import path from "path";
+import { kv } from '@vercel/kv';
 
-export default function handler(req, res) {
-  const bannedPath = path.join(process.cwd(), "data", "banned.json");
-  try {
-    const banned = JSON.parse(fs.readFileSync(bannedPath, "utf8"));
+export default async function handler(req, res) {
+    const banned = await kv.get('banned') || [];
     return res.status(200).json(banned);
-  } catch (e) {
-    return res.status(200).json([]);
-  }
 }
