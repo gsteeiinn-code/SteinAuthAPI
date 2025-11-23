@@ -1,81 +1,64 @@
-// SteinAuthAPI/api/register.js
+import { kv } from '@vercel/kv';
 
-const fs = require('fs');
-const path = require('path');
-
-// Caminhos dos arquivos JSON
-const usersPath = path.join(process.cwd(), 'data', 'users.json');
-const invitesPath = path.join(process.cwd(), 'data', 'invites.json');
-
-// Função para ler dados (com tratamento de erro básico)
-function readJsonFile(filePath) {
-    try {
-        const data = fs.readFileSync(filePath, 'utf8');
-        return JSON.parse(data);
-    } catch (error) {
-        // Se o arquivo não existir ou for inválido, retorna um array vazio
-        return [];
-    }
-}
-
-module.exports = (req, res) => {
-    // 1. Configurações e Verificação de Método
-    if (req.method !== 'POST') {
-        return res.status(405).json({ error: 'Method Not Allowed' });
+export default async function handler(req, res) {
+    if (req.method !== "POST") {
+        return res.status(405).json({ error: "Método não permitido" });
     }
 
     const { username, password, invite } = req.body;
 
-    // 2. Validação de Dados de Entrada
     if (!username || !password || !invite) {
-        return res.status(400).json({ error: 'Username, password, and invite code are required.' });
+        return res.status(400).json({ error: "Preencha todos os campos" });
     }
 
-    // 3. Carregar Dados
-    let users = readJsonFile(usersPath);
-    let invites = readJsonFile(invitesPath);
-
-    // 4. Checar se o Usuário já Existe
-    if (users.some(user => user.username.toLowerCase() === username.toLowerCase())) {
-        return res.status(409).json({ error: 'User already exists.' });
-    }
-
-    // 5. Encontrar e Validar o Invite
-    const inv = invites.find(i => i.code === invite);
-
-    if (!inv) {
-        return res.status(404).json({ error: 'Invite code not found.' });
-    }
-
-    if (inv.used) {
-        return res.status(403).json({ error: 'Invite code already used by ' + inv.usedBy });
-    }
-
-    // 6. Criar e Persistir Dados
-    
-    // Marcar o invite como usado
-    inv.used = true;
-    inv.usedBy = username;
-
-    // Adicionar o novo usuário
-    users.push({
-        username: username,
-        password: password, // Em um sistema real, a senha deveria ser HASHED!
-        isAdmin: false,
-        dateCreated: new Date().toISOString()
-    });
-
-    // ⚠️ CORREÇÃO CRÍTICA: SALVAR ALTERAÇÕES NOS ARQUIVOS
-    // A falta destas linhas causava o erro 500.
     try {
-        fs.writeFileSync(usersPath, JSON.stringify(users, null, 2));
-        fs.writeFileSync(invitesPath, JSON.stringify(invites, null, 2));
-    } catch (writeError) {
-        console.error('Failed to write to data files:', writeError);
-        // Retorna um erro interno se a escrita falhar
-        return res.status(500).json({ error: 'Internal Server Error: Failed to save data.' });
+        // Carregar dados do banco (Redis)
+        let users = await kv.get('users') || [];
+        let invites = await kv.get('invites') || [];
+        let banned = await kv.get('banned') || [];
+
+        // Verificações
+        if (users.some(u => u.username.toLowerCase() === username.toLowerCase())) {
+            return res.status(400).json({ error: "Usuario ja existe" });
+        }
+        if (banned.some(b => b.username.toLowerCase() === username.toLowerCase())) {
+            return res.status(403).json({ error: "Usuario banido" });
+        }
+
+        // Verificar Invite
+        const inviteIndex = invites.findIndex(i => i.code === invite);
+        
+        if (inviteIndex === -1) {
+            return res.status(404).json({ error: "Invite invalido" });
+        }
+        
+        if (invites[inviteIndex].used) {
+            return res.status(400).json({ error: "Invite ja usado" });
+        }
+
+        // --- SUCESSO: SALVAR DADOS NO BANCO ---
+        
+        // 1. Atualizar Invite
+        invites[inviteIndex].used = true;
+        invites[inviteIndex].usedBy = username;
+        await kv.set('invites', invites);
+
+        // 2. Criar Usuário
+        const newUser = {
+            username,
+            password,
+            inviteUsed: invite,
+            date: new Date().toISOString(),
+            isAdmin: false
+        };
+        
+        users.push(newUser);
+        await kv.set('users', users);
+
+        return res.status(200).json({ success: true, message: "Conta criada com sucesso!" });
+
+    } catch (error) {
+        console.error(error);
+        return res.status(500).json({ error: "Erro no servidor: " + error.message });
     }
-    
-    // 7. Resposta de Sucesso
-    return res.status(200).json({ success: true, message: 'Account registered successfully.', username: username });
-};
+}
