@@ -1,10 +1,9 @@
-import fs from 'fs';
-import path from 'path';
+import { kv } from '@vercel/kv';
 
-export default function handler(req, res) {
-    const invitesPath = path.join(process.cwd(), "data", "invites.json");
-    const invites = JSON.parse(fs.readFileSync(invitesPath, "utf8"));
+export default async function handler(req, res) {
+    // Busca a lista do banco de dados
+    const invites = await kv.get('invites') || [];
     
-    // Retorna tudo
+    // Retorna a lista (O Batch vai filtrar o que é 'used: false')
     return res.status(200).json(invites);
 }
