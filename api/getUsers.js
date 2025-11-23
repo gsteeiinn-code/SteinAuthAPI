@@ -1,9 +1,6 @@
-import fs from "fs";
-import path from "path";
+import { kv } from '@vercel/kv';
 
-export default function handler(req, res) {
-    const usersPath = path.join(process.cwd(), "data", "users.json");
-    const users = JSON.parse(fs.readFileSync(usersPath, "utf8"));
+export default async function handler(req, res) {
+    const users = await kv.get('users') || [];
     return res.status(200).json(users);
 }
-
