@@ -1,9 +1,10 @@
 {
   "name": "stein-auth-api",
   "version": "1.0.0",
+  "description": "API de Autenticação",
+  "main": "index.js",
+  "license": "MIT",
   "dependencies": {
-    "@vercel/kv": "^1.0.1",
-    "fs": "0.0.1-security",
-    "path": "0.12.7"
+    "@vercel/kv": "^1.0.1"
   }
 }
