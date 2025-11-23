@@ -1,14 +1,13 @@
 import { kv } from '@vercel/kv';
 
 export default async function handler(req, res) {
-    if (req.method !== "POST") {
-        return res.status(405).json({ error: "Método não permitido" });
-    }
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    if (req.method === 'OPTIONS') return res.status(200).end();
+    if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
-    // Gera código aleatório
-    const code = Math.random().toString(36).substring(2, 12).toUpperCase();
+    // Gera código aleatório (ex: K92J-M3P1)
+    const code = Math.random().toString(36).substring(2, 6).toUpperCase() + "-" + Math.random().toString(36).substring(2, 6).toUpperCase();
     
-    // Cria o objeto do invite
     const newInvite = {
         code: code,
         creator: req.body.creator || "Admin",
@@ -17,13 +16,15 @@ export default async function handler(req, res) {
         date: new Date().toISOString()
     };
 
-    // Pega a lista atual de invites do banco
-    let invites = await kv.get('invites');
-    if (!invites) invites = []; // Se não existir, cria lista vazia
+    try {
+        let invites = await kv.get('invites');
+        if (!invites || !Array.isArray(invites)) invites = [];
 
-    // Adiciona e salva
-    invites.push(newInvite);
-    await kv.set('invites', invites);
+        invites.push(newInvite);
+        await kv.set('invites', invites);
 
-    return res.status(200).json({ success: true, code: code });
+        return res.status(200).json({ success: true, code: code });
+    } catch (error) {
+        return res.status(500).json({ error: error.message });
+    }
 }
